@@ -176,6 +176,8 @@
         let velocityY = 0; const gravity = -0.015; let isJumping = false;
         let jumpStrength = 0.3; let baseJumpStrength = 0.3;
         let flyMode = false; let flyTimer = 0; let jumpBoostTimer = 0;
+        let lives = 3; const maxLives = 3;
+        let shakeTimer = 0; let lifeRegenTimer = 0;
 
         let audioCtx; let musicInterval;
 
@@ -200,12 +202,13 @@
         const clock = new THREE.Clock();
 
         const assetsToLoad = [
-            { name: 'jake', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/jake_subway_surfers_real.glb', height: 2 },
-            { name: 'cop', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/inspector_subway_surfers.glb', height: 2.2 },
-            { name: 'train', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/subway_surfers_train.glb', height: 3.5, rotY: Math.PI },
-            { name: 'hoverboard', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/scifi_jetpack.glb', height: 1.0 },
-            { name: 'coin', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/subway_surfers_coin.glb', height: 1.0 },
-            { name: 'bootsJump', url: 'https://raw.githubusercontent.com/kepth02xzn1-cloud/subway/main/air_jordan_1.glb', height: 1.0 }
+{ name: 'jake', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/jake_subway_surfers_real.glb', height: 2 },
+            { name: 'cop', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/inspector_subway_surfers.glb', height: 2.2 },
+            { name: 'train', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/subway_surfers_train.glb', height: 3.5, rotY: Math.PI },
+            { name: 'hoverboard', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/scifi_jetpack.glb', height: 1.0 },
+            { name: 'coin', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/subway_surfers_coin.glb', height: 1.0 },
+            { name: 'bootsJump', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/air_jordan_1.glb', height: 1.0 },
+            { name: 'obstacles', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/sanstitre.glb', height: 1.0, rotY: Math.PI / 2 }
         ];
 
         let modelsLoadedCount = 0;
@@ -349,7 +352,11 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
                             child.castShadow = true;
                             child.receiveShadow = true;
                             child.frustumCulled = false;
-                            if (child.material) child.material.side = THREE.DoubleSide;
+                            if (child.material) {
+                                child.material.side = THREE.DoubleSide;
+                                 child.material.transparent = false; // Forces it to be solid
+                                 child.material.depthWrite = true;   // Fixes weird see-through overlaps
+                            }
                         }
                     });
 
@@ -459,6 +466,8 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
             player.position.set(0, 0, 0);
             cop.position.set(0, 0, 6);
             velocityY = 0; flyMode = false; flyTimer = 0; jumpBoostTimer = 0; jumpStrength = 0.3;
+            lives = maxLives; shakeTimer = 0; lifeRegenTimer = 0;
+            camera.position.set(0, 5, 10); // Ensures camera isn't stuck shaking if you restart quickly
             updateUI();
         }
 
@@ -473,18 +482,28 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
                     continue;
                 }
                 const rand = Math.random();
-                if (rand < 0.4) spawnObstacle(xPos, spawnZ, 'train');
+                if (rand < 0.2) spawnObstacle(xPos, spawnZ, 'train'); // 20% chance for a Train
+                else if (rand < 0.4) spawnObstacle(xPos, spawnZ, 'obstacles'); // 20% chance for a Jumpable Barrier
                 else if (rand < 0.7) spawnItem(xPos, spawnZ, 'coin');
                 else if (rand < 0.75) spawnItem(xPos, spawnZ, 'jump');
                 else if (rand < 0.8) spawnItem(xPos, spawnZ, 'hoverboard');
             }
         }
 
-        function spawnObstacle(x, z, type) {
-            let mesh = loadedModels['train'].clone();
-            mesh.position.set(x, 0, z);
+function spawnObstacle(x, z, type) {
+            let mesh = loadedModels[type].clone(); 
+            
+            // By default, the obstacle goes exactly in the center of the lane
+            let finalX = x; 
+            
+            // If it's the barrier, nudge it to the left to fix the off-center model
+            if (type === 'obstacles') {
+                finalX = x - 0.8; // Change this number if you need to fine-tune it! (- moves left, + moves right)
+            }
+            
+            mesh.position.set(finalX, 0, z); 
             scene.add(mesh);
-            worldObjects.push({ mesh: mesh, type: 'obstacle' });
+            worldObjects.push({ mesh: mesh, type: 'obstacle', obstacleType: type });
         }
 
         function spawnItem(x, z, type) {
@@ -499,6 +518,9 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
                 yPos = 1.5; 
             } else if (type === 'jump') {
                 mesh = loadedModels['bootsJump'].clone();
+                yPos = 1.0; 
+            } else if (type === 'obstacles') {
+                mesh = loadedModels['obstacles'].clone();
                 yPos = 1.0; 
             }
 
@@ -542,6 +564,26 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
                 jumpBoostTimer--;
                 if (jumpBoostTimer <= 0) jumpStrength = baseJumpStrength;
             }
+
+            // Camera Shake Effect
+    if (shakeTimer > 0) {
+        shakeTimer--;
+        camera.position.x = (Math.random() - 0.5) * 0.8;
+        camera.position.y = 5 + (Math.random() - 0.5) * 0.8;
+    } else {
+        camera.position.x = 0;
+        camera.position.y = 5;
+    }
+
+    // Life Regeneration (Recovers 1 life every ~10 seconds)
+    if (lives < maxLives) {
+        lifeRegenTimer++;
+        if (lifeRegenTimer >= 600) { 
+            lives++;
+            lifeRegenTimer = 0;
+            playBeep(600, 'sine', 0.1); // Subtle chime when a life regenerates
+        }
+    }
         }
 
         function updateWorld() {
@@ -580,13 +622,28 @@ document.getElementById('storeBtn').addEventListener('click', openStore);
                     obj.mesh.position.y = 1 + Math.sin(Date.now() * 0.005) * 0.2; 
                 }
 
-                const objBox = new THREE.Box3().setFromObject(obj.mesh);
-                if (obj.type === 'obstacle') objBox.expandByScalar(-0.4);
+const objBox = new THREE.Box3().setFromObject(obj.mesh);
+if (obj.type === 'obstacle') {
+    if (obj.obstacleType === 'train') {
+        objBox.expandByScalar(-0.4); // Trains get a forgiving hitbox
+    } else {
+        objBox.expandByScalar(-0.1); // Barriers shrink slightly so their hitbox doesn't disappear!
+    }
+}
 
-                if (playerBox.intersectsBox(objBox)) {
-                    if (obj.type === 'obstacle') {
-                        if (!flyMode) gameOver();
-                    } else if (obj.type === 'coin') {
+if (playerBox.intersectsBox(objBox)) {
+            if (obj.type === 'obstacle') {
+                if (!flyMode) {
+                    lives--;
+                    shakeTimer = 20; // 20 frames of screen shake
+                    playBeep(150, 'sawtooth', 0.2); // "Oof" crash sound
+                    removeObject(i); // Break the obstacle so it doesn't double-hit you
+                    
+                    if (lives <= 0) {
+                        gameOver(); // Only die if lives hit 0
+                    }
+                }
+            } else if (obj.type === 'coin') {
                         coinCount++;
                         playBeep(600, 'sine');
                         removeObject(i);
@@ -635,7 +692,7 @@ function gameOver() {
         function updateUI() {
             document.getElementById('score').innerText = score;
             document.getElementById('coins').innerText = coinCount;
-            let status = "";
+            let status = `Lives: ${lives} | `;
             if (flyMode) status += "HOVERBOARD ACTIVE! ";
             if (jumpBoostTimer > 0) status += "JUMP BOOST! ";
             document.getElementById('powerup-status').innerText = status;
@@ -643,7 +700,7 @@ function gameOver() {
 
         function onKeyDown(event) {
             if (!gameActive) return;
-            if (event.code === 'Escape') {
+            if (event.code === 'Space' || event.code === 'ArrowUp') {
     togglePause();
     return;
 }
