@@ -175,6 +175,8 @@
         let currentLane = 0; const laneWidth = 3; let targetX = 0;
         let velocityY = 0; const gravity = -0.015; let isJumping = false;
         let jumpStrength = 0.3; let baseJumpStrength = 0.3;
+        let isRolling = false; 
+        let rollTimer = 0;
         let flyMode = false; let flyTimer = 0; let jumpBoostTimer = 0;
         let lives = 3; const maxLives = 3;
         let shakeTimer = 0; let lifeRegenTimer = 0;
@@ -204,7 +206,8 @@
             { name: 'hoverboard', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/scifi_jetpack.glb', height: 1.0 },
             { name: 'coin', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/subway_surfers_coin.glb', height: 1.0 },
             { name: 'bootsJump', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/air_jordan_1.glb', height: 1.0 },
-            { name: 'obstacles', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/sanstitre.glb', height: 1.0, rotY: Math.PI / 2 }
+            { name: 'obstacles', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/sanstitre.glb', height: 1.0, rotY: Math.PI / 2 },
+            { name: 'fencing', url: 'https://raw.githubusercontent.com/kubmakk/subway/main/src/fencing.glb', height: 1.0 }
         ];
 
         let modelsLoadedCount = 0;
@@ -585,6 +588,18 @@ function spawnObstacle(x, z, type) {
             if (jumpBoostTimer > 0) {
                 jumpBoostTimer--;
                 if (jumpBoostTimer <= 0) jumpStrength = baseJumpStrength;
+            } // Roll Timer and visual squish effect
+            if (isRolling) {
+                rollTimer--;
+                player.scale.y = player.scale.x * 0.5; // Squish the character down
+                
+                if (rollTimer <= 0) {
+                    isRolling = false;
+                    player.scale.y = player.scale.x; // Stand back up to normal height
+                    if (!isJumping) {
+                        playPlayerAnimation('run');
+                    }
+                }
             }
 
             // Camera Shake Effect
@@ -644,6 +659,10 @@ function updateWorld() {
 
             const playerBox = new THREE.Box3().setFromObject(player);
             playerBox.expandByScalar(-0.3); 
+            // Shave off the top of the hitbox if rolling so we pass under fences
+            if (isRolling) {
+                playerBox.max.y -= 1.0; 
+            }
 
             for (let i = worldObjects.length - 1; i >= 0; i--) {
                 let obj = worldObjects[i];
@@ -737,7 +756,7 @@ function gameOver() {
             if (event.code === 'Escape') {
     togglePause();
     return;
-}
+} 
 if (!gameActive || isPaused) return;
             if ((event.code === 'ArrowLeft' || event.code === 'KeyA') && currentLane > -1) {
                 currentLane--; targetX = currentLane * laneWidth;
@@ -749,6 +768,14 @@ if (!gameActive || isPaused) return;
                     isJumping = true;
                     playBeep(400, 'sine', 0.1);
                     playPlayerAnimation('jump'); 
+                }
+            } else if (event.code === 'ArrowDown' || event.code === 'KeyS') {
+                if (!flyMode) {
+                    if (isJumping) {
+                        velocityY = -0.5; // Fast-fall to the ground instantly
+                    }
+                    isRolling = true;
+                    rollTimer = 40; // Roll lasts for 40 frames
                 }
             }
 
